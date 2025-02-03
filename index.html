@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tariff War Game</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            background: url('https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Flag_of_the_United_States.svg/1920px-Flag_of_the_United_States.svg.png') repeat;
+            background-size: 200px;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #header {
+            background: black;
+            padding: 20px;
+            text-align: center;
+            color: white;
+            position: relative;
+            z-index: 2;
+        }
+        .instruction-box {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px;
+            display: inline-block;
+            position: relative;
+            z-index: 2;
+        }
+        #map { 
+            height: 500px; 
+            width: 60%; 
+            float: left; 
+            position: relative;
+            z-index: 1;
+        }
+        #info { 
+            width: 35%; 
+            float: right; 
+            padding: 10px; 
+            background: rgba(0, 0, 0, 0.7); 
+            border-radius: 10px;
+            position: relative;
+            z-index: 2;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid white; padding: 5px; text-align: center; }
+        
+        /* Nuclear explosion overlay */
+        #nuke-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: transparent;
+            display: none;
+            z-index: 999;
+        }
+        #nuke-gif {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        #end-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: black;
+            color: white;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-size: 3em;
+            text-align: center;
+            z-index: 1000;
+            flex-direction: column;
+        }
+        #quote {
+            font-size: 0.5em;
+            margin-top: 20px;
+            opacity: 0;
+            transition: opacity 2s;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>Tariff War Game: Impose Tariffs and Get Retaliated</h1>
+    </div>
+    
+    <div class="instruction-box">
+        <p>You are the USA. Click a country (or more) to impose tariffs. Click "Next Round" to see retaliation.</p>
+        <p style="color: #8B0000; 
+             margin: 8px 0;
+             font-weight: 800;
+             text-shadow: 1px 1px 2px black;
+             font-size: 1.05em;">
+        WARNING: 1000% total tariffs against the US, will lead to WAR
+    </p>
+        <p><strong>Total Tariffs on USA:</strong> <span id="tariffCounter">0%</span></p>
+    </div>
+
+    <div id="map"></div>
+    <div id="info">
+        <h2>Tariffs Table</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Country</th>
+                    <th>Your Tariff (%)</th>
+                    <th>Retaliation (%)</th>
+                </tr>
+            </thead>
+            <tbody id="tariffTable"></tbody>
+        </table>
+        <button onclick="nextRound()">Next Round</button>
+    </div>
+
+    <div id="nuke-overlay">
+        <img id="nuke-gif" src="https://i.gifer.com/1Zwt.gif" alt="Nuclear explosion">
+    </div>
+
+    <div id="end-screen">
+        <div>GAME OVER</div>
+        <div id="quote">"An eye for an eye makes the whole world blind"</div>
+    </div>
+
+    <script>
+        let totalTariffs = 0;
+        const maxTariff = 1000;
+        const tariffCounter = document.getElementById('tariffCounter');
+        let tariffs = {};
+        let countryLayers = {};
+        
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+        
+        axios.get('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
+            .then(response => {
+                L.geoJSON(response.data, {
+                    style: feature => ({ color: "black", weight: 1, fillOpacity: 0.5, fillColor: "#ffffff" }),
+                    onEachFeature: function (feature, layer) {
+                        let countryName = feature.properties.name;
+                        countryLayers[countryName] = layer;
+                        
+                        layer.on('click', function () {
+                            if (totalTariffs >= maxTariff) return;
+                            
+                            let tariffIncrease = prompt(`Enter tariff for ${countryName}:`, "0");
+                            if (tariffIncrease === null || isNaN(tariffIncrease) || tariffIncrease <= 0) return;
+                            
+                            tariffIncrease = parseInt(tariffIncrease);
+                            tariffs[countryName] = tariffs[countryName] || { playerTariff: 0, retaliation: 0 };
+                            tariffs[countryName].playerTariff += tariffIncrease;
+                            
+                            updateCountryColor(countryName);
+                            updateTable();
+                        });
+                    }
+                }).addTo(map);
+            });
+
+        function gameOver() {
+            // Hide game elements
+            document.getElementById('map').style.display = 'none';
+            document.getElementById('info').style.display = 'none';
+            document.querySelector('.instruction-box').style.display = 'none';
+            
+            // Show nuclear explosion
+            const nukeOverlay = document.getElementById('nuke-overlay');
+            nukeOverlay.style.display = 'block';
+            
+            // After explosion, show end screen
+            setTimeout(() => {
+                nukeOverlay.style.display = 'none';
+                const endScreen = document.getElementById('end-screen');
+                endScreen.style.display = 'flex';
+                setTimeout(() => {
+                    document.getElementById('quote').style.opacity = '1';
+                }, 1000);
+            }, 2000);
+        }
+
+        function nextRound() {
+            Object.keys(tariffs).forEach(country => {
+                let imposedTariff = tariffs[country].playerTariff;
+                let retaliation = imposedTariff + Math.floor(Math.random() * imposedTariff * 2);
+                tariffs[country].retaliation += retaliation;
+                totalTariffs += retaliation;
+            });
+            updateTable();
+            tariffCounter.textContent = totalTariffs + "%";
+            
+            if (totalTariffs >= maxTariff) {
+                gameOver();
+            }
+        }
+        
+        function updateCountryColor(country) {
+            let tariff = tariffs[country].playerTariff;
+            let intensity = Math.min(255, Math.floor((tariff / maxTariff) * 255));
+            let color = `rgb(255, ${255 - intensity}, ${255 - intensity})`;
+            countryLayers[country].setStyle({ fillColor: color });
+        }
+        
+        function updateTable() {
+            let tableBody = document.getElementById('tariffTable');
+            tableBody.innerHTML = "";
+            Object.keys(tariffs).forEach(country => {
+                let row = `<tr>
+                    <td>${country}</td>
+                    <td>${tariffs[country].playerTariff}%</td>
+                    <td>${tariffs[country].retaliation}%</td>
+                </tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+    </script>
+</body>
+</html>
